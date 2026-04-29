@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MindLab | Evolution Grid</title>
+    <style>
+        :root {
+            --bg: #05070a;
+            --surface: #0f172a;
+            --accent: #6366f1;
+            --success: #10b981;
+            --border: rgba(255,255,255,0.1);
+            --text-dim: #94a3b8;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            align-items: center;
+            padding: 20px;
+        }
+
+        /* --- Header & Progress --- */
+        .header { width: 100%; max-width: 800px; padding: 20px 0; display: flex; justify-content: space-between; align-items: center; }
+        .streak-badge { background: var(--accent); padding: 8px 16px; border-radius: 50px; font-weight: 800; font-size: 0.9rem; }
+
+        /* --- Task Area --- */
+        .main-container { width: 100%; max-width: 500px; margin-top: 40px; position: relative; }
+        
+        .task-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 40px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            display: none;
+            animation: slideUp 0.5s ease forwards;
+        }
+
+        .task-card.active { display: flex; flex-direction: column; gap: 20px; }
+
+        .type-label { color: var(--accent); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; }
+        .task-title { font-size: 1.8rem; font-weight: 800; }
+        .task-desc { color: var(--text-dim); line-height: 1.6; font-size: 1.05rem; }
+
+        .btn {
+            background: white; color: black; border: none; padding: 16px; border-radius: 12px;
+            font-weight: 800; cursor: pointer; transition: 0.3s; margin-top: 10px;
+        }
+        .btn:hover { transform: scale(1.02); background: #e2e8f0; }
+
+        /* --- Calendar Grid --- */
+        .calendar-section { width: 100%; max-width: 800px; margin-top: 60px; text-align: center; }
+        .grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-top: 20px; }
+        .day-box { 
+            aspect-ratio: 1; background: var(--surface); border: 1px solid var(--border); 
+            border-radius: 8px; display: flex; align-items: center; justify-content: center;
+            font-size: 0.8rem; color: var(--text-dim);
+        }
+        .day-box.completed { background: var(--success); color: white; border: none; box-shadow: 0 0 15px rgba(16, 185, 129, 0.3); }
+
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div>
+            <h1 style="font-size: 1.5rem;">MindLab <span style="color:var(--accent)">AI</span></h1>
+            <p id="currentDate" style="color:var(--text-dim); font-size: 0.8rem;"></p>
+        </div>
+        <div class="streak-badge" id="streakText">Streak: 0 Days</div>
+    </div>
+
+    <div class="main-container" id="app">
+        <div id="startScreen" style="text-align: center;">
+            <h2 style="font-size: 2rem; margin-bottom: 10px;">Ready for Today?</h2>
+            <p style="color: var(--text-dim); margin-bottom: 30px;">Your 4-skill circuit is ready to be generated.</p>
+            <button class="btn" onclick="startCircuit()" style="width: 250px; background: var(--accent); color: white;">Generate Daily Tasks</button>
+        </div>
+
+        <div id="taskCircuit"></div>
+
+        <div id="successScreen" style="display: none; text-align: center;">
+            <h2 style="font-size: 3rem;">⚡</h2>
+            <h2 style="margin-top: 10px;">Circuit Complete</h2>
+            <p style="color: var(--text-dim); margin: 15px 0;">Neural pathways updated. See you tomorrow.</p>
+            <button class="btn" onclick="location.reload()" style="background: var(--surface); color: white; border: 1px solid var(--border);">Review Calendar</button>
+        </div>
+    </div>
+
+    <div class="calendar-section">
+        <h3>Consistency Grid</h3>
+        <div class="grid" id="historyGrid"></div>
+    </div>
+
+    <script>
+        const taskDatabase = {
+            logical: [
+                { t: "The Fallacy Hunt", d: "Find one opinion online today and identify the 'Strawman' or 'Ad Hominem' error in it." },
+                { t: "Deductive Leap", d: "Write a syllogism for your biggest goal today. (If X and Y, then Z must happen)." }
+            ],
+            analytical: [
+                { t: "5-Whys Deep Dive", d: "Pick one thing that annoyed you today. Ask 'Why' 5 times to find the root cause." },
+                { t: "Pareto Analysis", d: "Identify the 20% of your tasks that produce 80% of your results today." }
+            ],
+            creative: [
+                { t: "The Oblique Strategy", d: "Pick a random object in your room. Invent 5 uses for it that aren't its intended use." },
+                { t: "Constraint Innovation", d: "How would you solve your current biggest problem if you had zero money?" }
+            ],
+            decision: [
+                { t: "Inversion Thinking", d: "Instead of asking 'How do I succeed?', ask 'How could I definitely fail?'—then avoid those things." },
+                { t: "10-10-10 Rule", d: "Will this choice matter in 10 minutes? 10 months? 10 years?" }
+            ]
+        };
+
+        let currentStep = 0;
+        let selectedTasks = [];
+        let history = JSON.parse(localStorage.getItem('mindlab_history')) || [];
+
+        function init() {
+            document.getElementById('currentDate').innerText = new Date().toDateString();
+            updateStreak();
+            renderCalendar();
+        }
+
+        function startCircuit() {
+            document.getElementById('startScreen').style.display = 'none';
+            
+            // Logic to get a daily unique set based on date
+            const seed = new Date().getDate();
+            selectedTasks = [
+                { ...taskDatabase.logical[seed % 2], type: 'Logical' },
+                { ...taskDatabase.analytical[seed % 2], type: 'Analytical' },
+                { ...taskDatabase.creative[seed % 2], type: 'Creative' },
+                { ...taskDatabase.decision[seed % 2], type: 'Decision' }
+            ];
+
+            renderTask();
+        }
+
+        function renderTask() {
+            const container = document.getElementById('taskCircuit');
+            container.innerHTML = '';
+            
+            const task = selectedTasks[currentStep];
+            const card = document.createElement('div');
+            card.className = 'task-card active';
+            card.innerHTML = `
+                <div class="type-label">${task.type} Training</div>
+                <h3 class="task-title">${task.t}</h3>
+                <p class="task-desc">${task.d}</p>
+                <div style="font-size: 0.8rem; color: var(--text-dim);">Task ${currentStep + 1} of 4</div>
+                <button class="btn" onclick="nextStep()">Complete & Next</button>
+            `;
+            container.appendChild(card);
+        }
+
+        function nextStep() {
+            currentStep++;
+            if (currentStep < selectedTasks.length) {
+                renderTask();
+            } else {
+                finishDay();
+            }
+        }
+
+        function finishDay() {
+            document.getElementById('taskCircuit').innerHTML = '';
+            document.getElementById('successScreen').style.display = 'block';
+            
+            const today = new Date().toLocaleDateString();
+            if (!history.includes(today)) {
+                history.push(today);
+                localStorage.setItem('mindlab_history', JSON.stringify(history));
+            }
+            updateStreak();
+            renderCalendar();
+        }
+
+        function updateStreak() {
+            document.getElementById('streakText').innerText = `Streak: ${history.length} Days`;
+        }
+
+        function renderCalendar() {
+            const grid = document.getElementById('historyGrid');
+            grid.innerHTML = '';
+            for (let i = 27; i >= 0; i--) {
+                const d = new Date();
+                d.setDate(d.getDate() - i);
+                const dateStr = d.toLocaleDateString();
+                const cell = document.createElement('div');
+                cell.className = `day-box ${history.includes(dateStr) ? 'completed' : ''}`;
+                cell.innerText = d.getDate();
+                grid.appendChild(cell);
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
